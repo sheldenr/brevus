@@ -1,6 +1,6 @@
-# Brevus (ephemeral storage)
+# Brevus Ephemeral Storage Project
 
-So basically, this is a project called Brevus. It lets you upload files to Azure storage and then deletes them automatically after a timer runs out. 
+Brevus lets you upload files to Azure storage and then deletes them automatically after a timer runs out. 
 
 We do this because uploading huge files through a normal server makes the server really slow. Instead, the client gets a special temporary link and uploads the files straight to Azure Blob Storage. Then we save a note in a database (Cosmos DB) saying "delete this file in X seconds." When the timer is up, the database deletes the note, and that triggers a function to go delete the actual file.
 
