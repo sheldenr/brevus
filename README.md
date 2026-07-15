@@ -1,4 +1,4 @@
-# Brevus [ephemeral storage]
+# Brevus (ephemeral storage)
 
 So basically, this is a project called Brevus. It lets you upload files to Azure storage and then deletes them automatically after a timer runs out. 
 
