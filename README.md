@@ -2,7 +2,7 @@
 
 Brevus lets you upload files to Azure storage and then deletes them automatically after a timer runs out. 
 
-We do this because uploading huge files through a normal server makes the server really slow. Instead, the client gets a special temporary link and uploads the files straight to Azure Blob Storage. Then we save a note in a database (Cosmos DB) saying "delete this file in X seconds." When the timer is up, the database deletes the note, and that triggers a function to go delete the actual file.
+Traditionally uploading huge files through a normal server makes the server really slow. Instead, the client gets a special temporary link and uploads the files straight to Azure Blob Storage. Then we save a note in a database (Cosmos DB) saying "delete this file in X seconds." When the timer is up, the database deletes the note, and that triggers a function to go delete the actual file.
 
 ---
 
@@ -51,7 +51,7 @@ This script asks for an upload URL, uploads a test file, sets a 5-second timer, 
 
 ## Deploying to Azure
 
-If you want to put this on the real internet, the files in the `terraform/` folder set it all up:
+If you want to put this on a real Azure environment, the files in the `terraform/` folder set it all up:
 * It sets up Cosmos DB with the TTL feature turned on.
 * It sets up Blob Storage and turns off public access so no random people can look at your files.
 * It uses Managed Identities, which is just a secure way for the services to talk to each other without having to type passwords in the code.
