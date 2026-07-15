@@ -1,0 +1,121 @@
+name: "Enterprise Azure CI/CD Pipeline"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Required permissions for Azure OIDC login (OpenID Connect federation)
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_WORKING_DIR: "./terraform"
+  FUNC_WORKING_DIR: "./functions"
+
+jobs:
+  # =====================================================================
+  # JOB 1: Security Screening and Linting
+  # =====================================================================
+  security_and_lint:
+    name: "Security Scan & Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Validate Terraform Syntax
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
+
+      # Checkov static code analysis to audit infrastructure for vulnerabilities
+      - name: Run Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: ${{ env.TF_WORKING_DIR }}
+          framework: terraform
+          quiet: false
+          output_format: cli
+          # If Checkov detects issues (like disabled public network access rules), 
+          # we can fail the build unless explicit overrides are defined.
+          soft_fail: false
+
+  # =====================================================================
+  # JOB 2: Infrastructure Provisioning & Function App Deployment
+  # =====================================================================
+  deploy:
+    name: "Infrastructure Deploy & Release"
+    needs: security_and_lint
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Login to Azure using cryptographic trust via OpenID Connect (OIDC)
+      # No client secrets or passwords stored in GitHub!
+      - name: Log in to Azure (OIDC Identity Federation)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      # Provision resources
+      - name: Terraform Init, Plan & Apply
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          terraform init
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
+
+      # Retrieve dynamic outputs from Terraform state to feed into the deployment step
+      - name: Get Function App Name
+        id: tf_outputs
+        run: |
+          cd ${{ env.TF_WORKING_DIR }}
+          FUNC_NAME=$(terraform output -raw function_app_name)
+          echo "FUNC_NAME=$FUNC_NAME" >> $GITHUB_ENV
+
+      # Set up Python to build function app dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python_version: "3.10"
+
+      # Install Python dependencies and prepare package
+      - name: Build Azure Functions Package
+        run: |
+          cd ${{ env.FUNC_WORKING_DIR }}
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --target=".python_packages/lib/site-packages" -r requirements.txt
+          deactivate
+
+      # Deploy package to Azure Linux Function App
+      - name: Deploy Azure Functions to Cloud
+        uses: azure/functions-action@v1
+        with:
+          app-name: ${{ env.FUNC_NAME }}
+          package: ${{ env.FUNC_WORKING_DIR }}
